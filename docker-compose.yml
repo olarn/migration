@@ -15,7 +15,6 @@ services:
       - "1433:1433"
     volumes:
       - mssql_data:/var/opt/mssql
-      - ./sql:/usr/src/app/sql  # Mount ไฟล์ SQL เข้าไปใน container
 
   mssql-tools:
     image: mcr.microsoft.com/mssql-tools
@@ -23,38 +22,7 @@ services:
     container_name: mssql-tools
     depends_on:
       - mssql
-    volumes:
-      - ./sql:/usr/src/app/sql  # Mount ไฟล์ SQL เข้าไปใน mssql-tools
-    entrypoint: >
-      /bin/bash -c "
-        echo 'start insert user-que to start...'; 
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -Q \"IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'user-management') CREATE DATABASE [user-management];\"
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -d user-management -i /usr/src/app/sql/CRMSSP_USER_QUEUE_MANAGEMENT_SERVICE_SIT.sql;
-        echo 'insert user-que complete'; 
-        
-        echo 'start insert master-management to start...'; 
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -Q \"IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'master-management') CREATE DATABASE [master-management];\" 
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -d master-management -i /usr/src/app/sql/CRMSSP_MASTERDATA_MANAGEMENT_SERVICE_SIT.sql;
-        echo 'insert master-management complete'; 
-        
-        echo 'start insert batch-management to start...';
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -Q \"IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'batch-management') CREATE DATABASE [batch-management];\" 
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -d batch-management -i /usr/src/app/sql/BATCH.sql;
-        echo 'insert batch-management complete'; 
-        
-        echo 'insert case-management start...'; 
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -Q \"IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'case-management') CREATE DATABASE [case-management];\"
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -d case-management -i /usr/src/app/sql/CRMSSP_CASE_MANAGEMENT_SERVICE_SIT.sql;
-        echo 'insert case-managementt complete'; 
-
-        echo 'insert case-migration start...'; 
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -Q \"IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'case-migration') CREATE DATABASE [case-migration];\"
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -d case-migration -i /usr/src/app/sql/CRMSSP_CASE_MIGRATION_SERVICE_SIT.sql;
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -d case-migration -i /usr/src/app/sql/stg_doc_ref.sql;
-        /opt/mssql-tools/bin/sqlcmd -S mssql -U sa -P 'Str0ngP@ssw0rd!' -d case-migration -i /usr/src/app/sql/stg_sla_per_owner.sql;
-        echo 'insert case-migration complete'; 
-        tail -f /dev/null  # ป้องกันการปิด container หลังจากเสร็จสิ้น
-      "
+    entrypoint: ["/bin/sh", "-lc", "tail -f /dev/null"]
 
   
     stdin_open: true
