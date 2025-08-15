@@ -1,0 +1,200 @@
+group = 'com.ttb.crm.service'
+version = '0.0.1'
+
+buildscript {
+    ext {
+        springBootVersion = '3.4.5'
+        gradleDockerVersion = '0.32.0'
+        sonarqubeVersion = project.ext.isPrivateRepo ? '4.4.1.3373' : '3.0'
+    }
+
+    repositories {
+        flatDir {
+            dirs 'lib' //
+        }
+        if (project.ext.isPrivateRepo) {
+            maven {
+                url project.ext.nexus
+                metadataSources { artifact() }
+            }
+            maven { url project.ext.nexus }
+        } else {
+            mavenCentral()
+        }
+    }
+
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:${springBootVersion}")
+        classpath "org.sonarsource.scanner.gradle:sonarqube-gradle-plugin:${sonarqubeVersion}"
+        classpath "com.palantir.gradle.docker:gradle-docker:${gradleDockerVersion}"
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'jacoco'
+apply plugin: 'org.sonarqube'
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+
+
+if (project.hasProperty('projVersion')) {
+    project.version = project.projVersion
+} else {
+    project.version = '0.0.1'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    if (project.ext.isPrivateRepo) {
+        maven {
+            url project.ext.nexus
+            metadataSources { artifact() }
+        }
+        maven { url project.ext.nexus }
+    } else {
+        mavenCentral()
+    }
+}
+
+//// เพิ่ม Spring Cloud BOM ก่อน dependencies
+ext {
+    set('springCloudVersion', '2024.0.0')
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+    }
+}
+
+dependencies {
+    // Starter
+    implementation 'org.springframework.cloud:spring-cloud-starter-config'
+    implementation 'org.springframework.boot:spring-boot-starter-batch'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    testImplementation 'org.springframework.security:spring-security-test'
+    implementation 'org.springframework.batch:spring-batch-core'
+    implementation "org.springframework.boot:spring-boot-starter-web:${springBootVersion}"
+    implementation 'org.springframework:spring-web'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    implementation 'org.springframework.cloud:spring-cloud-starter-openfeign'
+    implementation 'org.springframework.boot:spring-boot-starter-cache'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.batch:spring-batch-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // Datasource
+    implementation 'com.microsoft.sqlserver:mssql-jdbc'
+    runtimeOnly 'com.microsoft.sqlserver:mssql-jdbc'
+
+    // Data migration
+//    implementation 'org.flywaydb:flyway-core'
+//    runtimeOnly 'org.flywaydb:flyway-sqlserver'
+
+    // Kafka - connect to Azure eventhubs
+    implementation 'org.springframework.kafka:spring-kafka'
+    testImplementation 'org.springframework.kafka:spring-kafka-test'
+
+    // Helper
+    implementation 'org.apache.commons:commons-lang3:3.17.0'
+
+    implementation 'com.ttb.crm:crmssp-common-utils-lib:1.0.11'
+
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.3'
+
+    // Log
+    implementation 'net.logstash.logback:logstash-logback-encoder:7.4'
+    implementation 'org.springframework.boot:spring-boot-starter-logging'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+    implementation 'com.ttb.crm:crmssp-common-log-lib:1.0.4'
+
+    // Rest client lib
+    implementation 'com.ttb.crm:crmssp-restclient-lib:1.0.2'
+
+    // For test
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    implementation 'com.ttb.crm:crmssp-encrypt-decrypt-lib:1.0.1'
+    implementation 'org.apache.poi:poi:5.4.0'
+    implementation 'org.apache.poi:poi-ooxml:5.4.0'
+    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+    testImplementation 'com.h2database:h2'
+
+    // Flyway
+    implementation 'org.flywaydb:flyway-core'
+    runtimeOnly 'org.flywaydb:flyway-sqlserver'
+}
+
+repositories {
+    if (project.ext.isPrivateRepo) {
+        maven {
+            url project.ext.nexus
+            metadataSources { artifact() }
+        }
+        maven { url project.ext.nexus }
+    } else {
+        mavenCentral()
+    }
+}
+
+
+jacoco {
+    toolVersion = "0.8.10"
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        csv.required = false
+        html.required = true
+    }
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+}
+
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+    reports.junitXml.required.set(false)
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+}
+
+tasks.test {
+    useJUnitPlatform()
+//    testLogging {
+//        events "passed", "skipped", "failed"
+//        exceptionFormat "short"
+//        showStandardStreams = true
+//    }
+}

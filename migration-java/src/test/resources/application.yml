@@ -1,0 +1,72 @@
+spring:
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+  config:
+    import: "optional:configserver:"
+  application:
+    name: case-migration-batch
+    schema: dbo
+  banner:
+    location: classpath:banner.txt
+    mode: console
+  profiles:
+    active: dev
+  flyway:
+    default-schema: dbo
+    enabled: false
+    locations: classpath:db/migration/secondary
+  main:
+    allow-bean-definition-overriding: true
+  eventhub:
+    access:
+      key:
+    group-case-movement:
+      id: top-cases-movement
+    host:
+    password:
+    port: 9093
+    topic-case-movement:
+      name:
+  datasource:
+    case-management:
+      driver-class-name: org.h2.Driver
+      url: jdbc:h2:mem:pbi_primary;DB_CLOSE_DELAY=-1;MODE=MSSQLServer
+      username: sa
+      password:
+
+    user-management:
+      driver-class-name: org.h2.Driver
+      url: jdbc:h2:mem:pbi_primary;DB_CLOSE_DELAY=-1;MODE=MSSQLServer
+      username: sa
+      password:
+
+    master-management:
+      driver-class-name: org.h2.Driver
+      url: jdbc:h2:mem:pbi_primary;DB_CLOSE_DELAY=-1;MODE=MSSQLServer
+      username: sa
+      password:
+
+    secondary:
+      driver-class-name: org.h2.Driver
+      url: jdbc:h2:mem:pbi_primary;DB_CLOSE_DELAY=-1;MODE=MSSQLServer
+      username: sa
+      password:
+
+    batch:
+      driver-class-name: org.h2.Driver
+      url: jdbc:h2:mem:pbi_primary;DB_CLOSE_DELAY=-1;MODE=MSSQLServer
+      username: sa
+      password:
+
+user:
+  client:
+    url: http://localhost:8080/user-queue-management
+master:
+  client:
+    url: http://localhost:8080/master-management
+
+batch-management:
+  client:
+    url: http://localhost:8080/batch-management

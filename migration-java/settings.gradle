@@ -1,0 +1,24 @@
+rootProject.name = 'casemigrationbatch'
+// pattern crmssp-some-batch --> somesbatch
+static def isPrivateRepo(String repoUrl) {
+    try {
+        def process = "curl -I $repoUrl".execute()
+        process.waitFor()
+        int exitCode = process.exitValue()
+        return exitCode == 0
+    } catch (Exception ignored) {
+        return false
+    }
+}
+
+def privateNexus = 'https://nexus.tmbbank.local:8081/repository/TMBLIB'
+
+gradle.beforeProject { project ->
+    project.ext.nexus = privateNexus
+    project.ext.isPrivateRepo = isPrivateRepo(privateNexus)
+
+    if (project.ext.isPrivateRepo) {
+        println("Now $rootProject.name using repository from $privateNexus")
+    }
+
+}

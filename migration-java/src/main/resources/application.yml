@@ -1,0 +1,10 @@
+spring:
+    application:
+        name: casemigrationbatch
+        schema: dbo
+    config:
+        import: "optional:configserver:"
+server:
+    servlet:
+        context-path: /case-migration-batch
+    port: 8080

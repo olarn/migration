@@ -1,0 +1,221 @@
+spring:
+        # name -> boilerplate-crmssp-service --> crmsspservice
+    banner:
+        location: classpath:banner.txt
+        mode: console
+    main:
+        allow-bean-definition-overriding: true
+
+    # Batch Configuration
+    batch:
+        job:
+            enabled: false
+        jdbc:
+            initialize-schema: never
+
+    flyway:
+      default-schema: dbo
+      enabled: true
+      locations: classpath:db/migration/secondary
+
+  # MS SQL Configuration
+    jpa:
+        database-platform: org.hibernate.dialect.SQLServerDialect
+        hibernate:
+            batch_size: 1000
+            ddl-auto: validate
+            naming:
+                physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+        properties:
+            hibernate:
+                format_sql: true
+                generate_statistics: true
+                globally_quoted_identifiers: true
+                jdbc:
+                    batch_size: 50
+                order_inserts: true
+                order_updates: true
+
+    datasource:
+        case-management:
+            driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+            url: jdbc:sqlserver://localhost:1433;databaseName=master;encrypt=false;
+            username: SA
+            password: YourStrong@Passw0rd
+            hikari:
+                maximum-pool-size: 50
+                minimum-idle: 10
+                idle-timeout: 60000
+                connection-timeout: 60000
+                pool-name: MyHikariCP
+
+        user-management:
+            driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+            url: jdbc:sqlserver://sqlml-a0591-crmsp-sit.00f2babf1ef5.database.windows.net:1433;database=CRMSSP_USER_QUEUE_MANAGEMENT_SERVICE_DEV;encrypt=true;trustServerCertificate=true;hostNameInCertificate=*.database.windows.net;loginTimeout=30;
+            username: crmspdbservice
+            password: P@ssCrmsp@SIT_25
+            hikari:
+                maximum-pool-size: 50
+                minimum-idle: 10
+                idle-timeout: 60000
+                connection-timeout: 60000
+                pool-name: MyHikariCP
+
+        master-management:
+            driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+            url: jdbc:sqlserver://sqlml-a0591-crmsp-sit.00f2babf1ef5.database.windows.net:1433;database=CRMSSP_MASTERDATA_MANAGEMENT_SERVICE_DEV;encrypt=true;trustServerCertificate=true;hostNameInCertificate=*.database.windows.net;loginTimeout=30;
+            username: crmspdbservice
+            password: P@ssCrmsp@SIT_25
+            hikari:
+                maximum-pool-size: 50
+                minimum-idle: 10
+                idle-timeout: 60000
+                connection-timeout: 60000
+                pool-name: MyHikariCP
+
+        secondary:
+            driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+            url: jdbc:sqlserver://localhost:1433;databaseName=master;encrypt=false;
+            username: SA
+            password: YourStrong@Passw0rd
+            hikari:
+                maximum-pool-size: 50
+                minimum-idle: 10
+                idle-timeout: 60000
+                connection-timeout: 60000
+                pool-name: MyHikariCP
+
+        batch:
+            driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+            url: jdbc:sqlserver://localhost:1433;databaseName=master;encrypt=false;
+            username: SA
+            password: YourStrong@Passw0rd
+            hikari:
+                connection-timeout: 60000
+                idle-timeout: 60000
+                maximum-pool-size: 50
+                minimum-idle: 10
+                pool-name: MyHikariCP
+
+    feign:
+      enable-trust-all-ssl: true
+    data:
+      redis:
+        host: localhost
+        port: 6379
+        connect-timeout: 2000
+        timeout: 1000
+    redis:
+      enabled: true
+    cache:
+      type: redis
+      redis:
+        env: dev
+        cache-null-values: true
+        cache-names:
+          - employeeUserByEmployeeId
+          - employeeUserByEmployeeIdWithActiveStatus
+          - employeeUserByUserId
+          - teamIdListByEmployeeId
+          - slaStartDate
+          - slaCalculation
+          - holidays
+          - serviceTypeMatrixByCode
+          - masterDataByGroup
+          - masterDataByCodeAndGroup
+          - encryptionSecrets
+          - teams
+          - teamsByNameEn
+          - teamsByIds
+          - caseManagementService
+
+        ttl:
+          masterDataByGroup: 7200000              # 2 hours
+          masterDataByCodeAndGroup: 7200000       # 2 hours
+          serviceTypeMatrixByCode: 3600000        # 1 hour
+          encryptionSecrets: 7200000              # 2 hours
+          holidays: 86400000                      # 24 hours
+          teams: 1800000                          # 30 minutes
+          teamsByNameEn: 1800000                  # 30 minutes
+          teamsByIds: 1800000                     # 30 minutes
+          employeeUserByEmployeeId: 900000                    # 15 minutes
+          employeeUserByEmployeeIdWithActiveStatus: 900000    # 15 minutes
+          employeeUserByUserId: 900000                        # 15 minutes
+          teamIdListByEmployeeId: 900000                      # 15 minutes
+          slaStartDate: 900000                    # 15 minutes
+          slaCalculation: 900000                  # 15 minutes
+          caseManagementService: 900000           # 15 minutes
+
+    eventhub:
+        access:
+            key: 58iSGMSgh2+NMQrEfTtBbtd2xyeZ1T3YC+AEhD51UAU=
+        group-case-movement:
+            id: top-cases-movement
+        host: evh-a0551-top-dev.servicebus.windows.net
+        password: Endpoint=sb://${spring.eventhub.host}/;SharedAccessKeyName=AdminSharedAccessKey;SharedAccessKey=${spring.eventhub.access.key}
+        port: 9093
+        topic-case-movement:
+            name: top-dev1-cases-movement
+
+    kafka:
+        bootstrap-servers: ${spring.eventhub.host}:${spring.eventhub.port}
+        consumer:
+            auto-offset-reset: earliest
+            bootstrap-servers: ${spring.eventhub.host}:${spring.eventhub.port}
+            group-id: ${spring.eventhub.group-case-movement.id}
+            key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+            properties:
+                spring:
+                    json:
+                        trusted:
+                            packages: com.ttb.crm.service.*
+            value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+        producer:
+            bootstrap-servers: ${spring.eventhub.host}:${spring.eventhub.port}
+            key-serializer: org.apache.kafka.common.serialization.StringSerializer
+            properties:
+                delivery:
+                    timeout:
+                        ms: 180000
+                max:
+                    block:
+                        ms: 120000
+            value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+        properties:
+            sasl:
+                jaas:
+                    config: org.apache.kafka.common.security.plain.PlainLoginModule required username="$ConnectionString" password="${spring.eventhub.password}";
+                mechanism: PLAIN
+        security:
+            protocol: SASL_SSL
+
+# Logging level
+logging:
+    level:
+        root: INFO
+        com:
+            ttb:
+                crm: DEBUG
+springdoc:
+    api-docs:
+        path: /v3/api-docs
+    swagger-ui:
+        path: /swagger
+
+user:
+    client:
+        url: http://crmssp-user-queue-management-service/user-queue-management
+#        url: http://crmssp-user-queue-management-service.a0591-crmsp-dev-01.svc.cluster.local/user-queue-management
+master:
+    client:
+        url: http://crmssp-masterdata-management-service/master-management
+#        url: http://crmssp-masterdata-management-service.a0591-crmsp-dev-01.svc.cluster.local/master-management
+
+batch-management:
+    client:
+        url: http://crmssp-batch-management-service/batch-management
+
+server:
+    servlet:
+        context-path: /case-migration-batch
+    port: 8080
