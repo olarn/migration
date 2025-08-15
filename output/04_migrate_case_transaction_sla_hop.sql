@@ -1,85 +1,81 @@
--- =====================================================
--- Case Transaction SLA Hop Migration Script
--- Source: [case-migration].dbo.stg_sla_per_owner
--- Destination: [case-management].dbo.case_transaction_sla_hop
--- =====================================================
+/*
+	Migrate case_transaction_sla_hop from stg_sla_per_owner
+	- Uses deterministic GUID for case_sla_hop_id
+*/
 
--- Disable constraints and indexes for faster bulk load
-ALTER TABLE [case-management].dbo.case_transaction_sla_hop NOCHECK CONSTRAINT ALL;
-ALTER INDEX ALL ON [case-management].dbo.case_transaction_sla_hop DISABLE;
+SET NOCOUNT ON;
+SET XACT_ABORT ON;
 
--- Set minimal logging for bulk operations
-ALTER DATABASE [case-management] SET RECOVERY BULK_LOGGED;
+BEGIN TRY
+	BEGIN TRAN;
 
--- Bulk insert with parallel processing
-INSERT INTO [case-management].dbo.case_transaction_sla_hop (
-    case_transaction_sla_hop_id,
-    case_id,
-    hop_number,
-    owner_team_name,
-    owner_employee_id,
-    owner_name,
-    start_date,
-    end_date,
-    duration_minutes,
-    case_status,
-    created_on,
-    modified_on
-)
-SELECT 
-    NEWID() as case_transaction_sla_hop_id,
-    ct.case_id,
-    ROW_NUMBER() OVER (PARTITION BY s.Case__c ORDER BY s.Start_Date_Time__c) as hop_number,
-    s.Owner_Team_NEW as owner_team_name,
-    s.Employee_ID__c as owner_employee_id,
-    s.Name as owner_name,
-    CASE 
-        WHEN s.Start_Date_Time__c IS NOT NULL AND s.Start_Date_Time__c != '' 
-        THEN TRY_CAST(s.Start_Date_Time__c AS datetimeoffset)
-        ELSE NULL 
-    END as start_date,
-    CASE 
-        WHEN s.End_Date_Time__c IS NOT NULL AND s.End_Date_Time__c != '' 
-        THEN TRY_CAST(s.End_Date_Time__c AS datetimeoffset)
-        ELSE NULL 
-    END as end_date,
-    CASE 
-        WHEN s.End_Date_Time__c IS NOT NULL AND s.Start_Date_Time__c IS NOT NULL 
-        AND s.End_Date_Time__c != '' AND s.Start_Date_Time__c != ''
-        THEN DATEDIFF(MINUTE, TRY_CAST(s.Start_Date_Time__c AS datetimeoffset), TRY_CAST(s.End_Date_Time__c AS datetimeoffset))
-        ELSE NULL 
-    END as duration_minutes,
-    s.Case_Status__c as case_status,
-    CASE 
-        WHEN s.Start_Date_Time__c IS NOT NULL AND s.Start_Date_Time__c != '' 
-        THEN TRY_CAST(s.Start_Date_Time__c AS datetimeoffset)
-        ELSE GETDATE() 
-    END as created_on,
-    CASE 
-        WHEN s.End_Date_Time__c IS NOT NULL AND s.End_Date_Time__c != '' 
-        THEN TRY_CAST(s.End_Date_Time__c AS datetimeoffset)
-        ELSE GETDATE() 
-    END as modified_on
-FROM [case-migration].dbo.stg_sla_per_owner s WITH (NOLOCK)
-INNER JOIN [case-management].dbo.case_transaction ct WITH (NOLOCK)
-    ON s.Case__c = ct.case_number
-    AND ct.is_migration = 1
-WHERE s.migration_lot IS NOT NULL
-    AND s.record_status = 'ACTIVE'
-OPTION (MAXDOP 4, OPTIMIZE FOR UNKNOWN);
+	IF DB_ID('case-migration') IS NULL THROW 50000, 'Database [case-migration] not found', 1;
+	IF DB_ID('case-management') IS NULL THROW 50001, 'Database [case-management] not found', 1;
 
--- Re-enable constraints and indexes
-ALTER INDEX ALL ON [case-management].dbo.case_transaction_sla_hop REBUILD;
-ALTER TABLE [case-management].dbo.case_transaction_sla_hop WITH CHECK CHECK CONSTRAINT ALL;
+	USE [case-management];
 
--- Reset database recovery model
-ALTER DATABASE [case-management] SET RECOVERY FULL;
+	WITH base AS (
+		SELECT
+			mk.case_id,
+			so.Case__c,
+			so.Owner_Team__c,
+			so.Start_Date_Time__c,
+			so.End_Date_Time__c,
+			COALESCE(so.Owner_Team_NEW, so.Owner_Team__c) AS team_name,
+			so.Name AS owner_name,
+			TRY_CONVERT(int, so.Case_Status__c) AS status_code,
+			TRY_CONVERT(datetimeoffset, so.Start_Date_Time__c) AS start_datetime,
+			TRY_CONVERT(datetimeoffset, so.End_Date_Time__c) AS end_datetime,
+			CASE WHEN TRY_CONVERT(datetimeoffset, so.Start_Date_Time__c) IS NOT NULL AND TRY_CONVERT(datetimeoffset, so.End_Date_Time__c) IS NOT NULL
+				THEN TRY_CONVERT(real, DATEDIFF(minute, TRY_CONVERT(datetimeoffset, so.Start_Date_Time__c), TRY_CONVERT(datetimeoffset, so.End_Date_Time__c)))
+				ELSE NULL END AS total_duration
+		FROM [case-migration].[dbo].[stg_sla_per_owner] so
+		LEFT JOIN [case-migration].[dbo].[migration_case_keymap] mk
+			ON mk.source_case_number = so.Case__c
+		WHERE mk.case_id IS NOT NULL
+	),
+	ids AS (
+		SELECT *,
+			CONVERT(varchar(32), HASHBYTES('MD5', UPPER(CONCAT(ISNULL(Case__c,''),'|',ISNULL(Owner_Team__c,''),'|',ISNULL(Start_Date_Time__c,''),'|',ISNULL(End_Date_Time__c,'')))), 2) AS md5hex
+		FROM base
+	),
+	ids_fmt AS (
+		SELECT *,
+			LOWER(STUFF(STUFF(STUFF(STUFF(md5hex, 9, 0, '-'), 14, 0, '-'), 19, 0, '-'), 24, 0, '-')) AS guid_str
+		FROM ids
+	)
+	MERGE [dbo].[case_transaction_sla_hop] AS tgt
+	USING (
+		SELECT
+			CONVERT(uniqueidentifier, guid_str) AS case_sla_hop_id,
+			case_id,
+			start_datetime,
+			end_datetime,
+			team_name,
+			owner_name,
+			status_code,
+			total_duration
+		FROM ids_fmt
+	) AS s
+	ON (tgt.case_sla_hop_id = s.case_sla_hop_id)
+	WHEN MATCHED THEN UPDATE SET
+		tgt.case_id = s.case_id,
+		tgt.start_datetime = s.start_datetime,
+		tgt.end_datetime = s.end_datetime,
+		tgt.team_name = s.team_name,
+		tgt.owner_name = s.owner_name,
+		tgt.status_code = s.status_code,
+		tgt.total_duration = s.total_duration
+	WHEN NOT MATCHED THEN INSERT (
+		case_sla_hop_id, case_id, start_datetime, end_datetime, team_name, owner_name, status_code, total_duration
+	) VALUES (
+		s.case_sla_hop_id, s.case_id, s.start_datetime, s.end_datetime, s.team_name, s.owner_name, s.status_code, s.total_duration
+	);
 
--- Display migration summary
-SELECT 
-    'Case Transaction SLA Hop Migration Complete' as Status,
-    COUNT(*) as Records_Migrated,
-    GETDATE() as Migration_Completed_At
-FROM [case-management].dbo.case_transaction_sla_hop h
-INNER JOIN [case-management].dbo.case_transaction ct ON h.case_id = ct.case_id
-WHERE ct.is_migration = 1;
+	COMMIT;
+END TRY
+BEGIN CATCH
+	IF @@TRANCOUNT > 0 ROLLBACK;
+	THROW;
+END CATCH;
+GO

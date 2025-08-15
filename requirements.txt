@@ -12,16 +12,4 @@ Mogration Destination database schema.tables (from folder destination schema):
 - [case-management].dbo.case_transaction_sla_activity | as a details of case_transaction 
 - [case-management].dbo.case_transaction_sla_hop | as a details of case_transaction 
 
-Mapping (folder Mapping):
-- code that implement with Java
-
-Migration as-fast-as-posible Guideline:
-1. Parallel Extract & Load - Use bulk operations and parallel processing
-2. Set-based Validation - Minimize row-by-row operations
-3. Efficient Key Mapping - Use hash joins and indexed lookups
-4. Batch Entity Curation - Process in chunks to manage memory
-5. Optimized Bulk Loading - Use minimal logging and table locks
-6. Smart Constraint/Index Management - Disable during load, rebuild after
-7. Performance Metrics - Monitor and optimize bottlenecks
-8. CDC Catch-up - Efficient change tracking
-
+Make sure all fields are exist. 

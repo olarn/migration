@@ -4,9 +4,7 @@ Details:
 1. I want to migrate large size of data in the source schema to the destination schema. 
 2. The source schema saved in the "source schema" folder.
 3. The destination schema saved in the "destination schema" folder.
-4. mapping logic saved in the file named "mapping.java" the folder "mapping".
-5. The overall mapping instruction is in the requirement.txt. 
-
+4. The overall mapping instruction is in the requirement.txt. 
 
 Expected Results: 
 1. Create sql bulk migration files that I can use to run in the MSSQL Server.
