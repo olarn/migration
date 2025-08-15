@@ -1,9 +1,6 @@
 /*
-	01 - Transform and migrate case_transaction (Java logic adapted)
-	- Deterministic case_id using case number / SF_ID
-	- Booleans normalized (Display_on_OneApp__c, FCR__c)
-	- Dates parsed with TRY_CONVERT
-	- Strings truncated to destination column lengths using LEFT
+	Migrate core case_transaction from stg_case_inprogress
+	- Self-contained: seeds deterministic keymap if missing
 */
 
 SET NOCOUNT ON;
@@ -50,7 +47,11 @@ BEGIN TRY
 	)
 	MERGE [dbo].[migration_case_keymap] AS tgt
 	USING (
-		SELECT case_number, sf_id, CONVERT(uniqueidentifier, guid_str) AS gen_case_id FROM ids_fmt
+		SELECT
+			case_number,
+			sf_id,
+			CONVERT(uniqueidentifier, guid_str) AS gen_case_id
+		FROM ids_fmt
 	) AS src
 	ON (
 		(tgt.source_case_number IS NOT NULL AND tgt.source_case_number = src.case_number)
@@ -70,27 +71,28 @@ BEGIN TRY
 	WITH src AS (
 		SELECT
 			ci.*, mk.case_id,
-			-- Dates
 			TRY_CONVERT(datetimeoffset, ci.CreatedDate) AS created_on_dt,
 			TRY_CONVERT(datetimeoffset, ci.LastModifiedDate) AS modified_on_dt,
 			TRY_CONVERT(datetimeoffset, ci.Resolved_Date_Time__c) AS resolved_dt,
 			TRY_CONVERT(datetimeoffset, ci.Closed_date) AS closed_dt,
 			TRY_CONVERT(datetimeoffset, ci.Transaction_Date__c) AS txn_dt,
-			-- Numerics
 			TRY_CONVERT(real, ci.Fund_Transfer_Bill_Payment_Amount__c) AS fund_transfer_bill_payment_amount_num,
 			TRY_CONVERT(real, ci.Amount_Deposit_Withdrawal__c) AS amount_deposit_withdrawal_num,
 			TRY_CONVERT(real, ci.Amount_Withdrawal_Deposit__c) AS amount_withdrawal_deposit_num,
 			TRY_CONVERT(real, ci.Amount_Received_Deposit_to_Account__c) AS amount_received_deposit_to_account_num,
 			TRY_CONVERT(real, ci.Deposit_Amount__c) AS deposit_amount_num,
 			TRY_CONVERT(int, ci.Status_Code) AS status_code_int,
-			COALESCE(TRY_CONVERT(real, ci.SLA_Day__c), 0.0) AS sla_num,
-			-- Booleans
+			TRY_CONVERT(real, ci.SLA_Day__c) AS sla_num,
 			CASE WHEN UPPER(ci.Display_on_OneApp__c) IN ('1','Y','YES','TRUE') THEN 1 WHEN UPPER(ci.Display_on_OneApp__c) IN ('0','N','NO','FALSE') THEN 0 ELSE NULL END AS visible_on_touch_bit,
 			CASE WHEN UPPER(ci.FCR__c) IN ('1','Y','YES','TRUE') THEN 1 WHEN UPPER(ci.FCR__c) IN ('0','N','NO','FALSE') THEN 0 ELSE NULL END AS fcr_bit
 		FROM [case-migration].[dbo].[stg_case_inprogress] ci
-		JOIN [case-migration].[dbo].[migration_case_keymap] mk
-			ON (ci.CaseNumber IS NOT NULL AND mk.source_case_number = ci.CaseNumber)
-			OR (ci.CaseNumber IS NULL AND ci.SF_ID IS NOT NULL AND mk.source_sf_id = ci.SF_ID)
+		OUTER APPLY (
+			SELECT TOP (1) km.case_id
+			FROM [case-migration].[dbo].[migration_case_keymap] km
+			WHERE (ci.CaseNumber IS NOT NULL AND km.source_case_number = ci.CaseNumber)
+			   OR (ci.CaseNumber IS NULL AND ci.SF_ID IS NOT NULL AND km.source_sf_id = ci.SF_ID)
+		) mk
+		WHERE mk.case_id IS NOT NULL
 	)
 	MERGE [dbo].[case_transaction] AS tgt
 	USING (
@@ -100,82 +102,81 @@ BEGIN TRY
 			fund_transfer_bill_payment_amount_num, amount_deposit_withdrawal_num,
 			amount_withdrawal_deposit_num, amount_received_deposit_to_account_num,
 			deposit_amount_num, status_code_int, sla_num,
-			-- Truncate to destination lengths
-			LEFT(ci.CaseNumber, 255) AS case_number,
-			LEFT(ci.Call_Number__c, 10) AS call_number,
-			LEFT(ci.Contact_Person_Name__c, 100) AS contact_person_name,
-			LEFT(ci.Contact_Person_Phone__c, 10) AS contact_person_phone,
-			LEFT(ci.Contact_Person_Phone_2__c, 10) AS contact_person_phone_2,
-			LEFT(ci.Contact_Person_Email__c, 250) AS contact_person_email,
-			LEFT(ci.Participant_ID__c, 50) AS participant_id,
-			LEFT(ci.Prompt_Pay, 20) AS prompt_pay,
-			LEFT(ci.Prompt_Pay__c, 255) AS prompt_pay_transfer_account,
-			LEFT(ci.Wrong_Prompt_Pay, 255) AS wrong_prompt_pay,
-			LEFT(ci.Receiver_Name__c, 255) AS receiver_name,
-			LEFT(ci.Transaction_Type__Code, 50) AS transaction_type_code,
-			LEFT(ci.Transaction_Type__Value, 300) AS transaction_type_value,
-			LEFT(ci.Address__c, 255) AS address,
-			LEFT(ci.Document_Id__c, 255) AS document_id,
-			LEFT(ci.Document_Type__c, 255) AS document_type,
-			LEFT(ci.EMS_Tracking_No__c, 255) AS ems_tracking,
-			LEFT(ci.Object_Id__c, 255) AS object_id,
-			LEFT(ci.Repository_Id__c, 255) AS repository_id,
-			LEFT(ci.Staff_ID__c, 255) AS staff_id,
-			LEFT(ci.Owner_Name__c, 255) AS owner_name,
-			LEFT(ci.Branch_Code__c, 255) AS branch_code,
-			LEFT(ci.Branch_Name__c, 255) AS branch_name,
-			LEFT(ci.SMS_Code_In_progress__c, 50) AS sms_code_in_progress,
-			LEFT(ci.SMS_Code_New__c, 50) AS sms_code_new,
-			LEFT(ci.SMS_Code_Resolution_1__c, 50) AS sms_code_resolution_1,
-			LEFT(ci.SMS_Code_Resolution_2__c, 50) AS sms_code_resolution_2,
-			LEFT(ci.SMS_Code_Resolved__c, 50) AS sms_code_resolved,
-			LEFT(ci.PTA_Segment__Code, 50) AS pta_segment_code,
-			LEFT(ci.PTA_Segment__Value, 300) AS pta_segment_value,
-			LEFT(ci.original_problem_channel_code, 50) AS original_problem_channel_code,
-			LEFT(ci.original_problem_channel_value, 300) AS original_problem_channel_value,
-			LEFT(ci.data_source_code, 50) AS data_source_code,
-			LEFT(ci.data_source_value, 300) AS data_source_value,
-			LEFT(ci.Priority_Code, 50) AS priority_code,
-			LEFT(ci.Priority_Value, 300) AS priority_value,
-			LEFT(ci.Integration_System, 255) AS integration_system,
-			LEFT(ci.Created_Channel__c, 50) AS created_channel,
-			LEFT(ci.Created_Channel_New, 50) AS created_channel_new,
-			LEFT(ci.Issue_New_for_OneApp_EN__c, 250) AS issue_name_ttb_touch_en,
-			LEFT(ci.Issue_New_for_OneApp__c, 250) AS issue_name_ttb_touch_th,
-			LEFT(ci.Case_Issue__c, 250) AS issue_th,
-			LEFT(ci.Category__Code, 50) AS service_category_code,
-			LEFT(ci.Category__Value, 300) AS service_category_value,
-			LEFT(ci.Product_Category__c, 255) AS service_tab_code,
-			LEFT(ci.Product_Category__Value, 300) AS service_tab_value,
-			LEFT(ci.Current_Service_Template__Code, 50) AS service_template_code,
-			LEFT(ci.Current_Service_Template__Value, 300) AS service_template_value,
-			LEFT(ci.Service_Type_Matrix_Code__c, 50) AS service_type_matrix_code,
-			LEFT(ci.Product_Type_1__Code, 255) AS product_type_code_1,
-			LEFT(ci.Product_Type_2__Code, 255) AS product_type_code_2,
-			LEFT(ci.Product_Type_3__Code, 255) AS product_type_code_3,
-			LEFT(ci.Product_Type_1__Value, 300) AS product_type_value_1,
-			LEFT(ci.Product_Type_2__Value, 300) AS product_type_value_2,
-			LEFT(ci.Product_Type_3__Value, 300) AS product_type_value_3,
-			LEFT(ci.Product_Number_Full_1__c, 255) AS product_number_full_1,
-			LEFT(ci.Product_Number_Full_2__c, 255) AS product_number_full_2,
-			LEFT(ci.Product_Number_Full_3__c, 255) AS product_number_full_3,
-			LEFT(ci.Product_Number_1__c, 255) AS product_number_marking_1,
-			LEFT(ci.Product_Number_2__c, 255) AS product_number_marking_2,
-			LEFT(ci.Product_Number_3__c, 255) AS product_number_marking_3,
-			LEFT(ci.Suffix_1__c, 5) AS suffix_1,
-			LEFT(ci.Suffix_2__c, 5) AS suffix_2,
-			LEFT(ci.Suffix_3__c, 5) AS suffix_3,
-			LEFT(ci.FundCode_1__c, 25) AS fund_code_1,
-			LEFT(ci.FundCode_2__c, 25) AS fund_code_2,
-			LEFT(ci.FundCode_3__c, 25) AS fund_code_3,
-			LEFT(ci.Recipient_Bank__Code, 50) AS recipient_bank_code,
-			LEFT(ci.Recipient_Bank__Value, 300) AS recipient_bank_value,
-			LEFT(ci.Inter_Bank_Recipient_Account_No__c, 175) AS inter_bank_recipient_account_no,
-			LEFT(ci.Wrong_Transfer_Account__c, 255) AS wrong_transfer_account,
-			LEFT(ci.Correct_Recipient_Bank__Code, 50) AS correct_recipient_bank_code,
-			LEFT(ci.Correct_Recipient_Bank__Value, 300) AS correct_recipient_bank_value,
-			LEFT(ci.Correct_Bank_Recipient_Account_No__c, 175) AS correct_bank_recipient_account_no,
-			LEFT(ci.Correct_Target_Account__c, 255) AS correct_target_account,
+			ci.CaseNumber AS case_number,
+			ci.Call_Number__c AS call_number,
+			ci.Contact_Person_Name__c AS contact_person_name,
+			ci.Contact_Person_Phone__c AS contact_person_phone,
+			ci.Contact_Person_Phone_2__c AS contact_person_phone_2,
+			ci.Contact_Person_Email__c AS contact_person_email,
+			ci.Participant_ID__c AS participant_id,
+			ci.Prompt_Pay AS prompt_pay,
+			ci.Prompt_Pay__c AS prompt_pay_transfer_account,
+			ci.Wrong_Prompt_Pay AS wrong_prompt_pay,
+			ci.Receiver_Name__c AS receiver_name,
+			ci.Transaction_Type__Code AS transaction_type_code,
+			ci.Transaction_Type__Value AS transaction_type_value,
+			ci.Address__c AS address,
+			ci.Document_Id__c AS document_id,
+			ci.Document_Type__c AS document_type,
+			ci.EMS_Tracking_No__c AS ems_tracking,
+			ci.Object_Id__c AS object_id,
+			ci.Repository_Id__c AS repository_id,
+			ci.Staff_ID__c AS staff_id,
+			ci.Owner_Name__c AS owner_name,
+			ci.Branch_Code__c AS branch_code,
+			ci.Branch_Name__c AS branch_name,
+			ci.SMS_Code_In_progress__c AS sms_code_in_progress,
+			ci.SMS_Code_New__c AS sms_code_new,
+			ci.SMS_Code_Resolution_1__c AS sms_code_resolution_1,
+			ci.SMS_Code_Resolution_2__c AS sms_code_resolution_2,
+			ci.SMS_Code_Resolved__c AS sms_code_resolved,
+			ci.PTA_Segment__Code AS pta_segment_code,
+			ci.PTA_Segment__Value AS pta_segment_value,
+			ci.original_problem_channel_code,
+			ci.original_problem_channel_value,
+			ci.data_source_code,
+			ci.data_source_value,
+			ci.Priority_Code AS priority_code,
+			ci.Priority_Value AS priority_value,
+			ci.Integration_System AS integration_system,
+			ci.Created_Channel__c AS created_channel,
+			ci.Created_Channel_New AS created_channel_new,
+			ci.Issue_New_for_OneApp_EN__c AS issue_name_ttb_touch_en,
+			ci.Issue_New_for_OneApp__c AS issue_name_ttb_touch_th,
+			ci.Case_Issue__c AS issue_th,
+			ci.Category__Code AS service_category_code,
+			ci.Category__Value AS service_category_value,
+			ci.Product_Category__c AS service_tab_code,
+			ci.Product_Category__Value AS service_tab_value,
+			ci.Current_Service_Template__Code AS service_template_code,
+			ci.Current_Service_Template__Value AS service_template_value,
+			ci.Service_Type_Matrix_Code__c AS service_type_matrix_code,
+			ci.Product_Type_1__Code AS product_type_code_1,
+			ci.Product_Type_2__Code AS product_type_code_2,
+			ci.Product_Type_3__Code AS product_type_code_3,
+			ci.Product_Type_1__Value AS product_type_value_1,
+			ci.Product_Type_2__Value AS product_type_value_2,
+			ci.Product_Type_3__Value AS product_type_value_3,
+			ci.Product_Number_Full_1__c AS product_number_full_1,
+			ci.Product_Number_Full_2__c AS product_number_full_2,
+			ci.Product_Number_Full_3__c AS product_number_full_3,
+			ci.Product_Number_1__c AS product_number_marking_1,
+			ci.Product_Number_2__c AS product_number_marking_2,
+			ci.Product_Number_3__c AS product_number_marking_3,
+			ci.Suffix_1__c AS suffix_1,
+			ci.Suffix_2__c AS suffix_2,
+			ci.Suffix_3__c AS suffix_3,
+			ci.FundCode_1__c AS fund_code_1,
+			ci.FundCode_2__c AS fund_code_2,
+			ci.FundCode_3__c AS fund_code_3,
+			ci.Recipient_Bank__Code AS recipient_bank_code,
+			ci.Recipient_Bank__Value AS recipient_bank_value,
+			ci.Inter_Bank_Recipient_Account_No__c AS inter_bank_recipient_account_no,
+			ci.Wrong_Transfer_Account__c AS wrong_transfer_account,
+			ci.Correct_Recipient_Bank__Code AS correct_recipient_bank_code,
+			ci.Correct_Recipient_Bank__Value AS correct_recipient_bank_value,
+			ci.Correct_Bank_Recipient_Account_No__c AS correct_bank_recipient_account_no,
+			ci.Correct_Target_Account__c AS correct_target_account,
 			ci.migration_lot,
 			ci.is_migration,
 			visible_on_touch_bit,
@@ -184,24 +185,20 @@ BEGIN TRY
 	) AS s
 	ON (tgt.case_id = s.case_id)
 	WHEN MATCHED THEN UPDATE SET
-		-- Numerics
 		tgt.fund_transfer_bill_payment_amount = s.fund_transfer_bill_payment_amount_num,
 		tgt.amount_deposit_withdrawal = s.amount_deposit_withdrawal_num,
 		tgt.amount_withdrawal_deposit = s.amount_withdrawal_deposit_num,
 		tgt.amount_received_deposit_to_account = s.amount_received_deposit_to_account_num,
 		tgt.deposit_amount = s.deposit_amount_num,
 		tgt.sla = s.sla_num,
-		-- Dates
 		tgt.created_on = s.created_on_dt,
 		tgt.modified_on = s.modified_on_dt,
 		tgt.resolved_date = s.resolved_dt,
 		tgt.closed_date = s.closed_dt,
 		tgt.transaction_date = s.txn_dt,
-		-- Status and flags
 		tgt.status_code = s.status_code_int,
 		tgt.visible_on_touch = s.visible_on_touch_bit,
 		tgt.fcr = s.fcr_bit,
-		-- Texts (already truncated)
 		tgt.case_number = s.case_number,
 		tgt.call_number = s.call_number,
 		tgt.contact_person_name = s.contact_person_name,

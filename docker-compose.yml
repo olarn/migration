@@ -1,8 +1,7 @@
-version: '3.8'
-
 services:
   mssql:
     image: mcr.microsoft.com/azure-sql-edge
+    platform: "linux/amd64"
     container_name: mssql
     restart: always
     environment:
@@ -20,6 +19,7 @@ services:
 
   mssql-tools:
     image: mcr.microsoft.com/mssql-tools
+    platform: "linux/amd64"
     container_name: mssql-tools
     depends_on:
       - mssql

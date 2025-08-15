@@ -1,7 +1,5 @@
 /*
-	03 - Transform and migrate case_transaction_document_reference (Java logic adapted)
-	- Deterministic document_reference_id (MD5 of case+object+file)
-	- Truncate strings to destination lengths
+	Migrate case_transaction_document_reference from stg_case_document_reference
 */
 
 SET NOCOUNT ON;
@@ -13,37 +11,45 @@ BEGIN TRY
 	IF DB_ID('case-migration') IS NULL THROW 50000, 'Database [case-migration] not found', 1;
 	IF DB_ID('case-management') IS NULL THROW 50001, 'Database [case-management] not found', 1;
 
+	USE [case-management];
+
 	WITH base AS (
 		SELECT
 			mk.case_id,
 			dr.Case__c,
 			dr.Object_ID__c,
-			dr.Name AS File_Name__c,
-			LEFT(dr.ECM_App_ID__c, 255) AS emp_app_id,
-			LEFT(dr.ECM_MS_Doctype_Key__c, 255) AS emp_ms_doc_type_key,
-			LEFT(dr.Repository__c, 255) AS repository,
+			dr.File_Name__c,
+			dr.ECM_App_ID__c AS emp_app_id,
+			dr.ECM_MS_Doctype_Key__c AS emp_ms_doc_type_key,
+			dr.Repository__c AS repository,
+			dr.Document_Type__c AS document_type,
 			TRY_CONVERT(int, dr.Update_ECM_Status__c) AS status_code,
 			TRY_CONVERT(datetimeoffset, dr.CreatedDate) AS created_on,
 			TRY_CONVERT(datetimeoffset, dr.LastModifiedDate) AS modified_on
 		FROM [case-migration].[dbo].[stg_case_document_reference] dr
-		JOIN [case-migration].[dbo].[migration_case_keymap] mk
+		LEFT JOIN [case-migration].[dbo].[migration_case_keymap] mk
 			ON mk.source_case_number = dr.Case__c
-	), ids AS (
-		SELECT *, CONVERT(varchar(32), HASHBYTES('MD5', UPPER(CONCAT(ISNULL(Case__c,'') ,'|', ISNULL(Object_ID__c,'') ,'|', ISNULL(File_Name__c,'')))), 2) AS md5hex
+		WHERE mk.case_id IS NOT NULL
+	),
+	ids AS (
+		SELECT *,
+			CONVERT(varchar(32), HASHBYTES('MD5', UPPER(CONCAT(ISNULL(Case__c,''),'|',ISNULL(Object_ID__c,''),'|',ISNULL(File_Name__c,'')))), 2) AS md5hex
 		FROM base
-	), ids_fmt AS (
-		SELECT *, LOWER(STUFF(STUFF(STUFF(STUFF(md5hex, 9, 0, '-'), 14, 0, '-'), 19, 0, '-'), 24, 0, '-')) AS guid_str
+	),
+	ids_fmt AS (
+		SELECT *,
+			LOWER(STUFF(STUFF(STUFF(STUFF(md5hex, 9, 0, '-'), 14, 0, '-'), 19, 0, '-'), 24, 0, '-')) AS guid_str
 		FROM ids
 	)
-	MERGE [case-management].dbo.case_transaction_document_reference AS tgt
+	MERGE [dbo].[case_transaction_document_reference] AS tgt
 	USING (
 		SELECT
 			CONVERT(uniqueidentifier, guid_str) AS document_reference_id,
 			case_id,
-			LEFT(File_Name__c, 255) AS file_name,
-			LEFT(Object_ID__c, 255) AS object_document_id,
 			emp_app_id,
 			emp_ms_doc_type_key,
+			File_Name__c AS file_name,
+			Object_ID__c AS object_document_id,
 			repository,
 			status_code,
 			created_on,
